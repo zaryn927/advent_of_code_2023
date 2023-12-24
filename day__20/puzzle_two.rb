@@ -1,28 +1,31 @@
 Mod = Struct.new(:destinations, :function, :memory)
 MODULES = {}
 QUEUE = []
-$low_pulses = 0
-$high_pulses = 0
 
 def main
   parse_file
+  lv_inputs = MODULES.filter { |_, v| v.destinations.include?('lv') }.transform_values { |_| -1 }
   bc_mod = MODULES['broadcaster']
+  button_presses = 0
 
-  1000.times do
+  loop do
+    button_presses += 1
     bc_mod.function[bc_mod.destinations, false]
 
     until QUEUE.empty?
       origin, mod_name, pulse = QUEUE.shift
       mod = MODULES[mod_name]
+      next unless mod
+
       results = mod.function[origin, mod_name, mod.memory, mod.destinations, pulse]
-      $high_pulses += results.map(&:last).count { _1 }
-      $low_pulses += results.map(&:last).count(&:!)
-      results = results.filter { MODULES.keys.include?(_1[1]) }
+      lv_inputs[mod_name] = button_presses if lv_inputs[mod_name]&.negative? && results.filter { |r| r[1] == 'lv' }.map(&:last).first
       results.each { QUEUE << _1 }
     end
+
+    break if lv_inputs.values.all?(&:positive?)
   end
 
-  puts $low_pulses * $high_pulses
+  puts lv_inputs.values.inject(&:lcm)
 end
 
 def flip_flop(_, this, memory, destinations, pulse)
@@ -45,12 +48,9 @@ def conjunction(origin, this, memory, destinations, pulse)
 end
 
 def broadcaster(destinations, pulse)
-  $low_pulses += destinations.size + 1
   destinations.each do |d|
     d_mod = MODULES[d]
     results = d_mod.function['broadcaster', d, d_mod.memory, d_mod.destinations, pulse]
-    $high_pulses += results.map(&:last).count { _1 }
-    $low_pulses += results.map(&:last).count(&:!)
     results.each { QUEUE << _1 }
   end
 end
